@@ -18,12 +18,21 @@ type mockProvider struct {
 }
 
 // 模拟大模型的响应：第一轮请求执行 bash，第二轮输出最终结果
-func (m *mockProvider) Generate(ctx context.Context, msgs []schema.Message, _ []schema.ToolDefinition) (*schema.Message, error) {
+func (m *mockProvider) Generate(ctx context.Context, msgs []schema.Message, tools []schema.ToolDefinition) (*schema.Message, error) {
+	if len(tools) == 0 {
+		return &schema.Message{
+			Role: schema.RoleAssistant,
+			Content: "【推理中】目标是检查文件。我不能直接盲猜，我需要先调用 bash 工具执行 ls 命令，看看当前目录下有什么，然后再做定夺。",
+		}, nil
+	}
+
+
+	// 如果工具列表不为空，说明这是 Phase 2: Action 阶段
 	m.turn++
 	if m.turn == 1 {
 		return &schema.Message{
 			Role:    schema.RoleAssistant,
-			Content: "让我来看看当前目录下有什么文件。",
+			Content: "我要执行我刚才计划的步骤了。",
 			ToolCalls: []schema.ToolCall{
 				{ID: "call_123", Name: "bash", Arguments: []byte(`{"command": "ls -la"}`)},
 			},
@@ -41,7 +50,7 @@ func (m *mockProvider) Generate(ctx context.Context, msgs []schema.Message, _ []
 // ==========================================
 type mockRegistry struct{}
 
-func (m *mockRegistry) GetAvailableTools() []schema.ToolDefinition { return nil }
+func (m *mockRegistry) GetAvailableTools() []schema.ToolDefinition { return []schema.ToolDefinition{{Name: "bash"}} }
 
 func (m *mockRegistry) Execute(ctx context.Context, call schema.ToolCall) schema.ToolResult {
 	// 直接返回一段伪造的终端输出
@@ -63,7 +72,7 @@ func main() {
 	r := &mockRegistry{}
 
 	// 实例化核心引擎
-	eng := engine.NewAgentEngine(p, r, workDir)
+	eng := engine.NewAgentEngine(p, r, workDir, true)
 
 	// 发起任务指令
 	err := eng.Run(context.Background(), "帮我检查当前目录的文件")
