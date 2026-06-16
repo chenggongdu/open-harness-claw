@@ -1,64 +1,60 @@
-// cmd/claw/main.go
 package main
 
 import (
-    "context"
-    "log"
-    "os"
+	"context"
+	"log"
+	"os"
 
-    "github.com/chenggongdu/open-harness-claw/internal/engine"
-    "github.com/chenggongdu/open-harness-claw/internal/provider"
-    "github.com/chenggongdu/open-harness-claw/internal/schema"
+	"github.com/chenggongdu/open-harness-claw/internal/engine"
+	"github.com/chenggongdu/open-harness-claw/internal/provider"
+	"github.com/chenggongdu/open-harness-claw/internal/schema"
 )
 
-// 伪造的工具注册表 (用于测试 Provider 的工具提取能力)
 type mockRegistry struct{}
 
 func (m *mockRegistry) GetAvailableTools() []schema.ToolDefinition {
-    return []schema.ToolDefinition{
-        {
-            Name:        "get_weather",
-            Description: "获取指定城市的当前天气情况。",
-            InputSchema: map[string]interface{}{
-                "type": "object",
-                "properties": map[string]interface{}{
-                    "city": map[string]interface{}{
-                        "type": "string",
-                    },
-                },
-                "required": []string{"city"},
-            },
-        },
-    }
+	return []schema.ToolDefinition{
+		{
+			Name:        "get_weather",
+			Description: "获取指定城市的当前天气情况。",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"city": map[string]interface{}{
+						"type": "string",
+					},
+				},
+				"required": []string{"city"},
+			},
+		},
+	}
 }
 
 func (m *mockRegistry) Execute(ctx context.Context, call schema.ToolCall) schema.ToolResult {
-    log.Printf("  -> [Mock 工具执行] 获取 %s 的天气中...\n", call.Name)
-    return schema.ToolResult{
-        ToolCallID: call.ID,
-        Output:     "API 返回：今天是晴天，气温 25 度。",
-        IsError:    false,
-    }
+	log.Printf("  -> [Mock 工具执行] 获取 %s 的天气中...\n", call.Name)
+	return schema.ToolResult{
+		ToolCallID: call.ID,
+		Output:     "API 返回：今天是晴天，气温 25 度。",
+		IsError:    false,
+	}
 }
 
 func main() {
-    workDir, _ := os.Getwd()
+	if os.Getenv("ZHIPU_API_KEY") == "" {
+		log.Fatal("请先导出 ZHIPU_API_KEY 环境变量")
+	}
 
-    // 1. 初始化真实的 Provider大脑 (指向智谱 GLM-4.5)
-    // 这里你可以任意切换 NewZhipuClaudeProvider 或 NewZhipuOpenAIProvider，效果完全一致！
-    llmProvider := provider.NewZhipuOpenAIProvider("qwen3.6-plus")
+	workDir, _ := os.Getwd()
 
-    // 2. 注入伪造的工具注册表
-    registry := &mockRegistry{}
+	llmProvider := provider.NewZhipuOpenAIProvider("glm-4.5-air")
+	registry := &mockRegistry{}
 
-    // 3. 实例化并运行引擎，开启 EnableThinking = true (开启慢思考阶段！)
-    eng := engine.NewAgentEngine(llmProvider, registry, workDir, false)
+	eng := engine.NewAgentEngine(llmProvider, registry, workDir, true)
 
-    // 设定测试任务
-    prompt := "我想去北京跑步，帮我查查天气适合吗？"
+	prompt := "我想去北京跑步，帮我查查天气适合吗？"
 
-    err := eng.Run(context.Background(), prompt)
-    if err != nil {
-        log.Fatalf("引擎运行崩溃: %v", err)
-    }
+	err := eng.Run(context.Background(), prompt)
+	if err != nil {
+		log.Fatalf("引擎运行崩溃: %v", err)
+	}
 }
