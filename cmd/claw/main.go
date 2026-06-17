@@ -7,37 +7,8 @@ import (
 
 	"github.com/chenggongdu/open-harness-claw/internal/engine"
 	"github.com/chenggongdu/open-harness-claw/internal/provider"
-	"github.com/chenggongdu/open-harness-claw/internal/schema"
+	"github.com/chenggongdu/open-harness-claw/internal/tools"
 )
-
-type mockRegistry struct{}
-
-func (m *mockRegistry) GetAvailableTools() []schema.ToolDefinition {
-	return []schema.ToolDefinition{
-		{
-			Name:        "get_weather",
-			Description: "获取指定城市的当前天气情况。",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"city": map[string]interface{}{
-						"type": "string",
-					},
-				},
-				"required": []string{"city"},
-			},
-		},
-	}
-}
-
-func (m *mockRegistry) Execute(ctx context.Context, call schema.ToolCall) schema.ToolResult {
-	log.Printf("  -> [Mock 工具执行] 获取 %s 的天气中...\n", call.Name)
-	return schema.ToolResult{
-		ToolCallID: call.ID,
-		Output:     "API 返回：今天是晴天，气温 25 度。",
-		IsError:    false,
-	}
-}
 
 func main() {
 	if os.Getenv("ZHIPU_API_KEY") == "" {
@@ -47,11 +18,14 @@ func main() {
 	workDir, _ := os.Getwd()
 
 	llmProvider := provider.NewZhipuOpenAIProvider("glm-4.5-air")
-	registry := &mockRegistry{}
+	registry := tools.NewRegistry()
+
+	readFileTool := tools.NewReadFileTool(workDir)
+	registry.Register(readFileTool)
 
 	eng := engine.NewAgentEngine(llmProvider, registry, workDir, true)
 
-	prompt := "我想去北京跑步，帮我查查天气适合吗？"
+	prompt := "请调用工具读取一下当前工作区目录下 hello.txt 文件的内容，并用一句话向我总结它说了什么。"
 
 	err := eng.Run(context.Background(), prompt)
 	if err != nil {
