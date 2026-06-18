@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sync"
 
 	"github.com/chenggongdu/open-harness-claw/internal/provider"
 	"github.com/chenggongdu/open-harness-claw/internal/schema"
@@ -83,23 +84,38 @@ func (e *AgentEngine) Run(ctx context.Context, userPrompt string) error {
 
 		log.Printf("[Engine] 模型请求调用 %d 个工具...\n", len(actionResp.ToolCalls))
 
-		for _, toolCall := range actionResp.ToolCalls {
-			log.Printf("  -> 🛠️ 执行工具: %s, 参数: %s\n", toolCall.Name, string(toolCall.Arguments))
+		observationMsgs := make([]schema.Message, len((actionResp.ToolCalls)))
+		var wg sync.WaitGroup
+		for i, toolCall := range actionResp.ToolCalls {
+			wg.Add(1)
 
-			result := e.registry.Execute(ctx, toolCall)
+			go func(idx int, call schema.ToolCall) {
+				defer wg.Done()
 
-			if result.IsError {
-				log.Printf("  -> ❌ 工具执行报错: %s\n", result.Output)
-			} else {
-				log.Printf("  -> ✅ 工具执行成功 (返回 %d 字节)\n", len(result.Output))
+				log.Printf("  -> [Go-%d] 🛠️ 触发并行执行: %s\n", idx, call.Name)
+
+				result := e.registry.Execute(ctx, call)
+				if result.IsError {
+					log.Printf("  -> [Go-%d] ❌ 工具执行报错: %s\n", idx, result.Output)
+				} else {
+					log.Printf("  -> [Go-%d] ✅ 工具执行成功 (返回 %d 字节)\n", idx, len(result.Output))
+				}
+
+				// 安全写入对应索引
+				observationMsgs[idx] = schema.Message{
+					Role:       schema.RoleUser,
+					Content:    result.Output,
+					ToolCallID: call.ID,
+				}
+			}(i, toolCall)
+
+			wg.Wait()
+			log.Println("[Engine] 所有并发工具执行完毕，开始聚合观察结果 (Observation)...")
+
+			// 按序追加回 Context
+			for _, obs := range observationMsgs {
+				contextHistory = append(contextHistory, obs)
 			}
-
-			observationMsg := schema.Message{
-				Role:       schema.RoleUser,
-				Content:    result.Output,
-				ToolCallID: toolCall.ID,
-			}
-			contextHistory = append(contextHistory, observationMsg)
 		}
 	}
 
